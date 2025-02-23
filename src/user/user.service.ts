@@ -8,8 +8,12 @@ import { randomUUID } from 'crypto';
 import { UserNotFoundError } from 'src/common/errors/user_not_found';
 import { UserCreateNameConflictError } from 'src/common/errors/user_create_name_conflict';
 /** This key identifies with what game session id the user is involved in */
-const redisKeyUsernames = 'usernames';
+const redisKeyUsernameList = 'usernames';
 const redisKeyUsers = 'users';
+
+export interface UsernameListItem {
+  id: string;
+}
 
 export interface User {
   id: string;
@@ -24,7 +28,9 @@ export class UserService {
   async createUser(username: string) {
     try {
       // Need to make sure username is not in use
-      const userId = await this.redis.get(`${redisKeyUsernames}:${username}`);
+      const userId = await this.redis.get(
+        `${redisKeyUsernameList}:${username}`,
+      );
 
       if (userId) {
         throw new UserCreateNameConflictError({ username });
@@ -35,12 +41,13 @@ export class UserService {
         name: username,
       };
 
-      await this.redis.set(
-        `${redisKeyUsers}:${userData.id}`,
-        JSON.stringify(userData),
-      );
+      const usernameListyEntry: UsernameListItem = { id: userData.id };
 
-      await this.redis.set(`${redisKeyUsernames}:${username}`, userData.id);
+      await this.redis.set<User>(`${redisKeyUsers}:${userData.id}`, userData);
+      await this.redis.set<UsernameListItem>(
+        `${redisKeyUsernameList}:${username}`,
+        usernameListyEntry,
+      );
 
       return userData;
     } catch (error) {
@@ -53,9 +60,9 @@ export class UserService {
 
   async getUserById(id: string) {
     try {
-      const userString = await this.redis.get(`${redisKeyUsers}:${id}`);
-      if (!userString) throw new UserNotFoundError({ userId: id });
-      return JSON.parse(userString) as User;
+      const user = await this.redis.get<User>(`${redisKeyUsers}:${id}`);
+      if (!user) throw new UserNotFoundError({ userId: id });
+      return user;
     } catch (error) {
       if (error instanceof UserNotFoundError) {
         throw new NotFoundException(`User #${id} not found`);
@@ -65,13 +72,6 @@ export class UserService {
   }
 
   async updateUserById(id: string, updates: Partial<User>) {
-    const userString = await this.redis.get(`${redisKeyUsers}:${id}`);
-    if (!userString) throw new Error(`User #${id} not found`);
-    let userJson = JSON.parse(userString) as User;
-    userJson = {
-      ...userJson,
-      ...updates,
-    };
-    await this.redis.set(`${redisKeyUsers}:${id}`, JSON.stringify(userJson));
+    await this.redis.update<User>(`${redisKeyUsers}:${id}`, updates);
   }
 }

@@ -2,17 +2,31 @@ import { Injectable } from '@nestjs/common';
 import { RedisService } from 'src/redis/redis.service';
 import { randomUUID } from 'crypto';
 import { UserService } from 'src/user/user.service';
+import { addSeconds } from 'date-fns';
 /** This key references the game session state values */
 const redisKeyGameSession = 'game-session';
+const cfgGameSessionExpiry = 3600;
+const cfgGameActionTimeoutSeconds = 30;
+
+export interface GameLog {
+  timestamp: Date;
+  text: string;
+}
 
 export interface GameSession {
+  currentPlayerId: string | null;
+  currenActionTimeoutIn: Date;
   id: string;
+  log: GameLog[];
   playerIds: string[];
+  startedOn: Date;
+  status: 'setup' | 'progressing' | 'ended';
 }
 
 @Injectable()
 export class GameSessionService {
   constructor(
+    private readonly gameSession: GameSessionService,
     private readonly redis: RedisService,
     private readonly user: UserService,
   ) {}
@@ -31,9 +45,19 @@ export class GameSessionService {
       }
     }
 
+    const now = new Date();
+
     const sessionData: GameSession = {
+      currenActionTimeoutIn: addSeconds(
+        new Date(),
+        cfgGameActionTimeoutSeconds,
+      ),
+      currentPlayerId: null,
       id: randomUUID(),
       playerIds,
+      log: [{ text: 'Game started', timestamp: now }],
+      startedOn: now,
+      status: 'setup',
     };
 
     for (const pId of playerIds) {
@@ -42,22 +66,18 @@ export class GameSessionService {
       });
     }
 
-    const currentSessionId = await this.redis.set(
+    await this.redis.set(
       `${redisKeyGameSession}:${sessionData.id}`,
-      JSON.stringify(sessionData),
+      sessionData,
+      cfgGameSessionExpiry,
     );
-
-    console.dir(currentSessionId);
-    console.dir(sessionData);
     return sessionData;
   }
 
   async getGameSession(gameSessionId: string) {
-    const gameSessionString = await this.redis.get(
+    return await this.redis.get<GameSession>(
       `${redisKeyGameSession}:${gameSessionId}`,
     );
-    if (!gameSessionString) return null;
-    return JSON.parse(gameSessionString) as GameSession;
   }
 
   async getUserGameSession(userId: string) {
