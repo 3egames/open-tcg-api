@@ -12,7 +12,6 @@ export class AuthService {
   }
 
   async getCurrentUserAuth0Info(accessToken: string) {
-    console.log(`token: ${accessToken}`);
     const response = await axios.get(this.auth0UserInfoPath, {
       headers: {
         Authorization: `Bearer ${accessToken}`,

@@ -42,13 +42,10 @@ export class GameSessionService {
       });
     }
 
-    const currentSessionId = await this.redis.set(
+    await this.redis.set(
       `${redisKeyGameSession}:${sessionData.id}`,
       JSON.stringify(sessionData),
     );
-
-    console.dir(currentSessionId);
-    console.dir(sessionData);
     return sessionData;
   }
 
